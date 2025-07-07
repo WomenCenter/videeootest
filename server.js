@@ -1,7 +1,28 @@
-const WebSocket = require('ws');
+const fs = require('fs');
+const path = require('path');
 const http = require('http');
+const WebSocket = require('ws');
 
-const server = http.createServer();
+// Crée le serveur HTTP et sert le fichier HTML
+const server = http.createServer((req, res) => {
+  if (req.url === '/' || req.url === '/index.html') {
+    const filePath = path.join(__dirname, 'index.html');
+    fs.readFile(filePath, (err, data) => {
+      if (err) {
+        res.writeHead(500);
+        res.end('Erreur interne serveur');
+      } else {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(data);
+      }
+    });
+  } else {
+    res.writeHead(404);
+    res.end('404 Not Found');
+  }
+});
+
+// Initialise le WebSocket Server
 const wss = new WebSocket.Server({ server });
 
 let queue = [];
@@ -71,6 +92,7 @@ wss.on('connection', ws => {
   pairUsers();
 });
 
+// Démarre le serveur
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Serveur lancé sur http://0.0.0.0:${PORT}`);

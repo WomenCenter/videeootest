@@ -16,9 +16,34 @@
 
     let peer;
     let localStream;
+    let readyToConnect = false;
+    let isInitiator = null;
+
+    // D'abord, accès caméra + micro
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then(stream => {
+        localStream = stream;
+        localVideo.srcObject = stream;
+        readyToConnect = true;
+
+        if (isInitiator !== null) {
+          initPeer(isInitiator);
+        }
+      })
+      .catch(err => {
+        console.error("❌ Caméra/Micro refusés :", err);
+        status.textContent = "Erreur caméra/micro refusée.";
+      });
 
     async function initPeer(initiator) {
-      peer = new RTCPeerConnection();
+      if (!readyToConnect) {
+        isInitiator = initiator;
+        return; // attend que la caméra soit prête
+      }
+
+      peer = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
 
       peer.onicecandidate = e => {
         if (e.candidate) socket.send(JSON.stringify({ candidate: e.candidate }));
@@ -29,10 +54,9 @@
       };
 
       peer.onconnectionstatechange = () => {
-        console.log('État connexion :', peer.connectionState);
+        console.log("🔄 WebRTC state:", peer.connectionState);
       };
 
-      // Ajoute les pistes locales
       localStream.getTracks().forEach(track => {
         peer.addTrack(track, localStream);
       });
@@ -44,29 +68,17 @@
       }
     }
 
-    // Accès caméra/micro
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
-      localStream = stream;
-      localVideo.srcObject = stream;
-    });
-
-    // WebSocket
-    socket.onmessage = async (e) => {
-      let data;
-      if (typeof e.data === "string") {
-        data = JSON.parse(e.data);
-      } else {
-        const text = await e.data.text();
-        data = JSON.parse(text);
-      }
+    socket.onmessage = async e => {
+      const data = typeof e.data === 'string' ? JSON.parse(e.data) : JSON.parse(await e.data.text());
 
       if (data.type === "wait") {
-        status.textContent = "En attente d’un partenaire...";
+        status.textContent = "En attente d’un autre partenaire...";
       }
 
       if (data.type === "match") {
         status.textContent = "Connecté à un partenaire.";
-        await initPeer(data.initiator);
+        isInitiator = data.initiator;
+        if (readyToConnect) initPeer(isInitiator);
       }
 
       if (data.offer) {

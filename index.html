@@ -22,6 +22,7 @@
       align-items: center;
       height: 70vh;
       gap: 10px;
+      flex-wrap: wrap;
     }
 
     video {
@@ -30,7 +31,7 @@
       background: #111;
       border-radius: 10px;
       border: 2px solid #fff;
-      transform: none; /* 🎯 Pas d'effet miroir */
+      transform: none; /* 👈 Pas d'effet miroir */
     }
 
     select, button {
@@ -57,7 +58,7 @@
   </div>
 
   <script>
-    const socket = new WebSocket('wss://' + location.host);
+    const socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
     const localVideo = document.getElementById('localVideo');
     const remoteVideo = document.getElementById('remoteVideo');
     const videoSelect = document.getElementById('videoSource');
@@ -65,11 +66,9 @@
     const skipBtn = document.getElementById('skip');
     const status = document.getElementById('status');
 
-    let peer;
-    let localStream;
+    let peer = null;
+    let localStream = null;
     let isInitiator = null;
-    let currentVideoDevice = null;
-    let currentAudioDevice = null;
 
     skipBtn.onclick = () => {
       if (peer) peer.close();
@@ -78,7 +77,7 @@
       status.textContent = "Recherche d’un nouveau partenaire...";
     };
 
-    async function getMediaDevices() {
+    async function getDevices() {
       const devices = await navigator.mediaDevices.enumerateDevices();
       videoSelect.innerHTML = '';
       audioSelect.innerHTML = '';
@@ -86,7 +85,7 @@
       devices.forEach(device => {
         const option = document.createElement('option');
         option.value = device.deviceId;
-        option.text = device.label || `${device.kind} ${videoSelect.length + 1}`;
+        option.text = device.label || `${device.kind}`;
         if (device.kind === 'videoinput') videoSelect.appendChild(option);
         if (device.kind === 'audioinput') audioSelect.appendChild(option);
       });
@@ -180,11 +179,15 @@
       }
     };
 
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(async stream => {
-      await getMediaDevices();
-      videoSelect.selectedIndex = 0;
-      audioSelect.selectedIndex = 0;
-      startStream();
+    // Démarre après chargement des devices
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(async () => {
+      await getDevices();
+      if (videoSelect.length > 0) videoSelect.selectedIndex = 0;
+      if (audioSelect.length > 0) audioSelect.selectedIndex = 0;
+      await startStream();
+    }).catch(err => {
+      console.error("Erreur accès caméra/micro :", err);
+      alert("Erreur d'accès à la caméra ou au micro.");
     });
   </script>
 </body>

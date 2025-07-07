@@ -20,18 +20,44 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 70vh;
+      height: 60vh;
       gap: 10px;
-      flex-wrap: wrap;
     }
 
     video {
       width: 45%;
-      max-height: 70vh;
+      max-height: 60vh;
       background: #111;
       border-radius: 10px;
       border: 2px solid #fff;
-      transform: none; /* 👈 Pas d'effet miroir */
+    }
+
+    #chat {
+      margin: 1rem auto;
+      width: 80%;
+      max-width: 600px;
+      background: #111;
+      padding: 10px;
+      border-radius: 10px;
+      text-align: left;
+    }
+
+    #messages {
+      max-height: 150px;
+      overflow-y: auto;
+      margin-bottom: 10px;
+    }
+
+    #messages p {
+      margin: 5px 0;
+    }
+
+    #chatInput {
+      width: 100%;
+      padding: 8px;
+      border: none;
+      border-radius: 5px;
+      font-size: 1rem;
     }
 
     select, button {
@@ -57,17 +83,25 @@
     <video id="remoteVideo" autoplay playsinline></video>
   </div>
 
+  <!-- 💬 Zone de chat -->
+  <div id="chat">
+    <div id="messages"></div>
+    <input type="text" id="chatInput" placeholder="Écris un message et appuie sur Entrée">
+  </div>
+
   <script>
-    const socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+    const socket = new WebSocket('wss://' + location.host);
     const localVideo = document.getElementById('localVideo');
     const remoteVideo = document.getElementById('remoteVideo');
     const videoSelect = document.getElementById('videoSource');
     const audioSelect = document.getElementById('audioSource');
     const skipBtn = document.getElementById('skip');
+    const chatInput = document.getElementById('chatInput');
+    const messages = document.getElementById('messages');
     const status = document.getElementById('status');
 
-    let peer = null;
-    let localStream = null;
+    let peer;
+    let localStream;
     let isInitiator = null;
 
     skipBtn.onclick = () => {
@@ -75,9 +109,10 @@
       socket.send(JSON.stringify({ type: "skip" }));
       remoteVideo.srcObject = null;
       status.textContent = "Recherche d’un nouveau partenaire...";
+      messages.innerHTML = "";
     };
 
-    async function getDevices() {
+    async function getMediaDevices() {
       const devices = await navigator.mediaDevices.enumerateDevices();
       videoSelect.innerHTML = '';
       audioSelect.innerHTML = '';
@@ -92,9 +127,7 @@
     }
 
     async function startStream() {
-      if (localStream) {
-        localStream.getTracks().forEach(t => t.stop());
-      }
+      if (localStream) localStream.getTracks().forEach(t => t.stop());
 
       const constraints = {
         video: { deviceId: { exact: videoSelect.value } },
@@ -129,6 +162,7 @@
         if (peer.connectionState === 'disconnected' || peer.connectionState === 'failed') {
           remoteVideo.srcObject = null;
           socket.send(JSON.stringify({ type: "reconnect" }));
+          messages.innerHTML = "";
         }
       };
 
@@ -146,16 +180,13 @@
     socket.onmessage = async e => {
       const data = typeof e.data === 'string' ? JSON.parse(e.data) : JSON.parse(await e.data.text());
 
-      if (data.type === "wait") {
-        status.textContent = "En attente d’un partenaire...";
-      }
-
+      if (data.type === "wait") status.textContent = "En attente d’un partenaire...";
       if (data.type === "match") {
         status.textContent = "Connecté à un partenaire.";
         isInitiator = data.initiator;
+        messages.innerHTML = "";
         if (localStream) initPeer(isInitiator);
       }
-
       if (data.offer) {
         await initPeer(false);
         await peer.setRemoteDescription(new RTCSessionDescription(data.offer));
@@ -163,31 +194,43 @@
         await peer.setLocalDescription(answer);
         socket.send(JSON.stringify({ answer }));
       }
-
       if (data.answer) {
         await peer.setRemoteDescription(new RTCSessionDescription(data.answer));
       }
-
       if (data.candidate) {
         await peer.addIceCandidate(new RTCIceCandidate(data.candidate));
       }
-
       if (data.type === "partner_disconnected") {
         remoteVideo.srcObject = null;
         status.textContent = "Partenaire déconnecté. Recherche...";
         socket.send(JSON.stringify({ type: "reconnect" }));
+        messages.innerHTML = "";
+      }
+      if (data.type === "chat") {
+        const p = document.createElement("p");
+        p.textContent = "👤 " + data.text;
+        messages.appendChild(p);
+        messages.scrollTop = messages.scrollHeight;
       }
     };
 
-    // Démarre après chargement des devices
+    chatInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && chatInput.value.trim() !== "") {
+        const msg = chatInput.value;
+        const p = document.createElement("p");
+        p.textContent = "Moi: " + msg;
+        messages.appendChild(p);
+        messages.scrollTop = messages.scrollHeight;
+        socket.send(JSON.stringify({ type: "chat", text: msg }));
+        chatInput.value = "";
+      }
+    });
+
     navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(async () => {
-      await getDevices();
-      if (videoSelect.length > 0) videoSelect.selectedIndex = 0;
-      if (audioSelect.length > 0) audioSelect.selectedIndex = 0;
-      await startStream();
-    }).catch(err => {
-      console.error("Erreur accès caméra/micro :", err);
-      alert("Erreur d'accès à la caméra ou au micro.");
+      await getMediaDevices();
+      videoSelect.selectedIndex = 0;
+      audioSelect.selectedIndex = 0;
+      startStream();
     });
   </script>
 </body>

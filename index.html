@@ -1,12 +1,63 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>WebRTC Rencontre</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+      background: #121212;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h2 {
+      margin: 20px;
+    }
+
+    .video-container {
+      position: relative;
+      width: 80vw;
+      max-width: 900px;
+      height: 60vh;
+      background: black;
+      overflow: hidden;
+      border-radius: 10px;
+    }
+
+    #remoteVideo, #localVideo {
+      position: absolute;
+      object-fit: cover;
+    }
+
+    #remoteVideo {
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    #localVideo {
+      width: 30%;
+      height: 30%;
+      bottom: 10px;
+      right: 10px;
+      border: 2px solid white;
+      border-radius: 5px;
+      z-index: 2;
+    }
+  </style>
 </head>
 <body>
   <h2 id="status">Connexion...</h2>
-  <video id="localVideo" autoplay muted playsinline style="width: 45%"></video>
-  <video id="remoteVideo" autoplay playsinline style="width: 45%"></video>
+
+  <div class="video-container">
+    <video id="remoteVideo" autoplay playsinline></video>
+    <video id="localVideo" autoplay muted playsinline></video>
+  </div>
 
   <script>
     const socket = new WebSocket('wss://' + location.host);
@@ -19,7 +70,6 @@
     let readyToConnect = false;
     let isInitiator = null;
 
-    // D'abord, accès caméra + micro
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
         localStream = stream;
@@ -38,7 +88,7 @@
     async function initPeer(initiator) {
       if (!readyToConnect) {
         isInitiator = initiator;
-        return; // attend que la caméra soit prête
+        return;
       }
 
       peer = new RTCPeerConnection({
@@ -54,7 +104,7 @@
       };
 
       peer.onconnectionstatechange = () => {
-        console.log("🔄 WebRTC state:", peer.connectionState);
+        console.log("WebRTC state:", peer.connectionState);
       };
 
       localStream.getTracks().forEach(track => {

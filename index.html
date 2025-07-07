@@ -1,98 +1,47 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>WebRTC Rencontre + Chat</title>
+  <title>WebRTC Rencontre</title>
   <style>
     body {
       margin: 0;
-      padding: 0;
-      font-family: Arial, sans-serif;
-      background: #121212;
+      background: #000;
       color: white;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
+      font-family: sans-serif;
+      text-align: center;
     }
 
     h2 {
-      margin: 20px;
+      margin: 1rem;
     }
 
-    .video-container {
-      position: relative;
-      width: 80vw;
-      max-width: 900px;
-      height: 60vh;
-      background: black;
-      overflow: hidden;
+    #videos {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 90vh;
+      gap: 10px;
+    }
+
+    video {
+      width: 45%;
+      max-height: 80vh;
+      background: #111;
       border-radius: 10px;
-    }
-
-    #remoteVideo, #localVideo {
-      position: absolute;
-      object-fit: cover;
-    }
-
-    #remoteVideo {
-      width: 100%;
-      height: 100%;
-      z-index: 1;
+      border: 2px solid #fff;
     }
 
     #localVideo {
-      width: 30%;
-      height: 30%;
-      bottom: 10px;
-      right: 10px;
-      border: 2px solid white;
-      border-radius: 5px;
-      z-index: 2;
-    }
-
-    .chat {
-      width: 80vw;
-      max-width: 900px;
-      margin-top: 20px;
-      background: #1e1e1e;
-      border-radius: 10px;
-      padding: 10px;
-      box-sizing: border-box;
-    }
-
-    .messages {
-      height: 150px;
-      overflow-y: auto;
-      margin-bottom: 10px;
-      padding: 5px;
-      background: #111;
-      border-radius: 5px;
-    }
-
-    .messages p {
-      margin: 5px 0;
-    }
-
-    .chat input {
-      width: 100%;
-      padding: 8px;
-      border: none;
-      border-radius: 5px;
-      font-size: 16px;
+      transform: none; /* ✅ plus de miroir */
     }
   </style>
 </head>
 <body>
   <h2 id="status">Connexion...</h2>
-
-  <div class="video-container">
-    <video id="remoteVideo" autoplay playsinline></video>
+  <div id="videos">
     <video id="localVideo" autoplay muted playsinline></video>
-  </div>
-
-  <div class="chat">
-    <div class="messages" id="messages"></div>
-    <input id="chatInput" type="text" placeholder="Écris un message et appuie sur Entrée...">
+    <video id="remoteVideo" autoplay playsinline></video>
   </div>
 
   <script>
@@ -100,8 +49,6 @@
     const localVideo = document.getElementById('localVideo');
     const remoteVideo = document.getElementById('remoteVideo');
     const status = document.getElementById('status');
-    const messagesDiv = document.getElementById('messages');
-    const chatInput = document.getElementById('chatInput');
 
     let peer;
     let localStream;
@@ -113,11 +60,14 @@
         localStream = stream;
         localVideo.srcObject = stream;
         readyToConnect = true;
-        if (isInitiator !== null) initPeer(isInitiator);
+
+        if (isInitiator !== null) {
+          initPeer(isInitiator);
+        }
       })
       .catch(err => {
-        console.error("❌ Caméra/Micro refusés :", err);
-        status.textContent = "Erreur caméra/micro refusée.";
+        console.error("Erreur caméra/micro :", err);
+        status.textContent = "Erreur : accès caméra refusé.";
       });
 
     async function initPeer(initiator) {
@@ -136,6 +86,10 @@
 
       peer.ontrack = e => {
         remoteVideo.srcObject = e.streams[0];
+      };
+
+      peer.onconnectionstatechange = () => {
+        console.log("État WebRTC :", peer.connectionState);
       };
 
       localStream.getTracks().forEach(track => {
@@ -186,29 +140,8 @@
         status.textContent = "Partenaire déconnecté.";
         remoteVideo.srcObject = null;
         if (peer) peer.close();
-        addMessage("Le partenaire a quitté le chat.");
-      }
-
-      if (data.type === "chat") {
-        addMessage("👤 : " + data.message);
       }
     };
-
-    chatInput.addEventListener('keydown', e => {
-      if (e.key === "Enter" && chatInput.value.trim() !== "") {
-        const msg = chatInput.value.trim();
-        socket.send(JSON.stringify({ type: "chat", message: msg }));
-        addMessage("Moi : " + msg);
-        chatInput.value = "";
-      }
-    });
-
-    function addMessage(msg) {
-      const p = document.createElement("p");
-      p.textContent = msg;
-      messagesDiv.appendChild(p);
-      messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    }
   </script>
 </body>
 </html>

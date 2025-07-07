@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>WebRTC Rencontre</title>
+  <title>Rencontre WebRTC</title>
   <style>
     body {
       margin: 0;
@@ -20,25 +20,37 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 90vh;
+      height: 70vh;
       gap: 10px;
     }
 
     video {
       width: 45%;
-      max-height: 80vh;
+      max-height: 70vh;
       background: #111;
       border-radius: 10px;
       border: 2px solid #fff;
+      transform: none; /* 🎯 Pas d'effet miroir */
     }
 
-    #localVideo {
-      transform: scaleX(-1); /* ✅ effet miroir activé */
+    select, button {
+      margin: 5px;
+      padding: 5px;
+      font-size: 1rem;
     }
   </style>
 </head>
 <body>
   <h2 id="status">Connexion...</h2>
+
+  <div>
+    <label for="videoSource">Caméra :</label>
+    <select id="videoSource"></select>
+    <label for="audioSource">Micro :</label>
+    <select id="audioSource"></select>
+    <button id="skip">⏭ Skip</button>
+  </div>
+
   <div id="videos">
     <video id="localVideo" autoplay muted playsinline></video>
     <video id="remoteVideo" autoplay playsinline></video>
@@ -48,34 +60,60 @@
     const socket = new WebSocket('wss://' + location.host);
     const localVideo = document.getElementById('localVideo');
     const remoteVideo = document.getElementById('remoteVideo');
+    const videoSelect = document.getElementById('videoSource');
+    const audioSelect = document.getElementById('audioSource');
+    const skipBtn = document.getElementById('skip');
     const status = document.getElementById('status');
 
     let peer;
     let localStream;
-    let readyToConnect = false;
     let isInitiator = null;
+    let currentVideoDevice = null;
+    let currentAudioDevice = null;
 
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then(stream => {
-        localStream = stream;
-        localVideo.srcObject = stream;
-        readyToConnect = true;
+    skipBtn.onclick = () => {
+      if (peer) peer.close();
+      socket.send(JSON.stringify({ type: "skip" }));
+      remoteVideo.srcObject = null;
+      status.textContent = "Recherche d’un nouveau partenaire...";
+    };
 
-        if (isInitiator !== null) {
-          initPeer(isInitiator);
-        }
-      })
-      .catch(err => {
-        console.error("Erreur caméra/micro :", err);
-        status.textContent = "Erreur : accès caméra refusé.";
+    async function getMediaDevices() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      videoSelect.innerHTML = '';
+      audioSelect.innerHTML = '';
+
+      devices.forEach(device => {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.text = device.label || `${device.kind} ${videoSelect.length + 1}`;
+        if (device.kind === 'videoinput') videoSelect.appendChild(option);
+        if (device.kind === 'audioinput') audioSelect.appendChild(option);
       });
+    }
 
-    async function initPeer(initiator) {
-      if (!readyToConnect) {
-        isInitiator = initiator;
-        return;
+    async function startStream() {
+      if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
       }
 
+      const constraints = {
+        video: { deviceId: { exact: videoSelect.value } },
+        audio: { deviceId: { exact: audioSelect.value } }
+      };
+
+      localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      localVideo.srcObject = localStream;
+
+      if (isInitiator !== null) {
+        initPeer(isInitiator);
+      }
+    }
+
+    videoSelect.onchange = startStream;
+    audioSelect.onchange = startStream;
+
+    async function initPeer(initiator) {
       peer = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
       });
@@ -89,7 +127,10 @@
       };
 
       peer.onconnectionstatechange = () => {
-        console.log("État WebRTC :", peer.connectionState);
+        if (peer.connectionState === 'disconnected' || peer.connectionState === 'failed') {
+          remoteVideo.srcObject = null;
+          socket.send(JSON.stringify({ type: "reconnect" }));
+        }
       };
 
       localStream.getTracks().forEach(track => {
@@ -107,17 +148,17 @@
       const data = typeof e.data === 'string' ? JSON.parse(e.data) : JSON.parse(await e.data.text());
 
       if (data.type === "wait") {
-        status.textContent = "En attente d’un autre partenaire...";
+        status.textContent = "En attente d’un partenaire...";
       }
 
       if (data.type === "match") {
         status.textContent = "Connecté à un partenaire.";
         isInitiator = data.initiator;
-        if (readyToConnect) initPeer(isInitiator);
+        if (localStream) initPeer(isInitiator);
       }
 
       if (data.offer) {
-        if (!peer) await initPeer(false);
+        await initPeer(false);
         await peer.setRemoteDescription(new RTCSessionDescription(data.offer));
         const answer = await peer.createAnswer();
         await peer.setLocalDescription(answer);
@@ -129,19 +170,22 @@
       }
 
       if (data.candidate) {
-        try {
-          await peer.addIceCandidate(new RTCIceCandidate(data.candidate));
-        } catch (err) {
-          console.error("Erreur ICE :", err);
-        }
+        await peer.addIceCandidate(new RTCIceCandidate(data.candidate));
       }
 
       if (data.type === "partner_disconnected") {
-        status.textContent = "Partenaire déconnecté.";
         remoteVideo.srcObject = null;
-        if (peer) peer.close();
+        status.textContent = "Partenaire déconnecté. Recherche...";
+        socket.send(JSON.stringify({ type: "reconnect" }));
       }
     };
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(async stream => {
+      await getMediaDevices();
+      videoSelect.selectedIndex = 0;
+      audioSelect.selectedIndex = 0;
+      startStream();
+    });
   </script>
 </body>
 </html>

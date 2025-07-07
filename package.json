@@ -1,11 +1,23 @@
 {
   "name": "webrtc-app",
   "version": "1.0.0",
+  "description": "",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "ws": "^8.18.3"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WomenCenter/videeootest.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/WomenCenter/videeootest/issues"
+  },
+  "homepage": "https://github.com/WomenCenter/videeootest#readme"
 }

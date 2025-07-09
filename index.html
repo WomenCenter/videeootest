@@ -33,9 +33,8 @@
       object-fit: cover;
     }
 
-    /* ✅ Supprime l'effet miroir côté utilisateur */
     #localVideo {
-      transform: scaleX(1) !important;
+      transform: scaleX(1) !important; /* ✅ PAS DE MIROIR */
     }
 
     select, button, input {
@@ -90,6 +89,7 @@
     const audioSelect = document.getElementById('audioSource');
     const skipBtn = document.getElementById('skip');
     const status = document.getElementById('status');
+
     const msgInput = document.getElementById('msgInput');
     const sendBtn = document.getElementById('sendBtn');
     const messages = document.getElementById('messages');
@@ -125,13 +125,8 @@
       if (localStream) localStream.getTracks().forEach(t => t.stop());
 
       const constraints = {
-        video: {
-          deviceId: videoSelect.value ? { exact: videoSelect.value } : undefined,
-          facingMode: "user"
-        },
-        audio: {
-          deviceId: audioSelect.value ? { exact: audioSelect.value } : undefined
-        }
+        video: { deviceId: videoSelect.value ? { exact: videoSelect.value } : undefined },
+        audio: { deviceId: audioSelect.value ? { exact: audioSelect.value } : undefined }
       };
 
       localStream = await navigator.mediaDevices.getUserMedia(constraints);

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Rencontre WebRTC</title>
   <style>
     body {
@@ -27,7 +27,16 @@
       border-radius: 10px;
       border: 2px solid #fff;
       object-fit: cover;
-      transform: none !important; /* ✅ pas d’effet miroir */
+    }
+
+    #localVideo {
+      transform: scaleX(1) !important; /* ✅ Affichage non inversé */
+    }
+
+    select, button, input {
+      margin: 5px;
+      padding: 6px;
+      font-size: 1rem;
     }
 
     #chat {
@@ -43,12 +52,6 @@
       width: 80%;
       text-align: left;
       background: #111;
-    }
-
-    select, button, input {
-      margin: 5px;
-      padding: 6px;
-      font-size: 1rem;
     }
   </style>
 </head>
@@ -86,7 +89,10 @@
     const sendBtn = document.getElementById('sendBtn');
     const messages = document.getElementById('messages');
 
-    let peer, localStream, isInitiator = null, dataChannel;
+    let peer;
+    let localStream;
+    let isInitiator = null;
+    let dataChannel;
 
     skipBtn.onclick = () => {
       if (peer) peer.close();
@@ -100,6 +106,7 @@
       const devices = await navigator.mediaDevices.enumerateDevices();
       videoSelect.innerHTML = '';
       audioSelect.innerHTML = '';
+
       devices.forEach(device => {
         const option = document.createElement('option');
         option.value = device.deviceId;
@@ -111,12 +118,15 @@
 
     async function startStream() {
       if (localStream) localStream.getTracks().forEach(t => t.stop());
+
       const constraints = {
         video: { deviceId: videoSelect.value ? { exact: videoSelect.value } : undefined },
         audio: { deviceId: audioSelect.value ? { exact: audioSelect.value } : undefined }
       };
+
       localStream = await navigator.mediaDevices.getUserMedia(constraints);
       localVideo.srcObject = localStream;
+
       if (isInitiator !== null) initPeer(isInitiator);
     }
 
@@ -194,8 +204,12 @@
         await peer.setLocalDescription(answer);
         socket.send(JSON.stringify({ answer }));
       }
-      if (data.answer) await peer.setRemoteDescription(new RTCSessionDescription(data.answer));
-      if (data.candidate) await peer.addIceCandidate(new RTCIceCandidate(data.candidate));
+      if (data.answer) {
+        await peer.setRemoteDescription(new RTCSessionDescription(data.answer));
+      }
+      if (data.candidate) {
+        await peer.addIceCandidate(new RTCIceCandidate(data.candidate));
+      }
       if (data.type === "partner_disconnected") {
         remoteVideo.srcObject = null;
         status.textContent = "Partenaire déconnecté. Recherche...";

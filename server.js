@@ -1,22 +1,21 @@
 const http = require('http');
 const fs = require('fs');
-const WebSocket = require('ws');
 const path = require('path');
+const WebSocket = require('ws');
 
 const server = http.createServer((req, res) => {
-  let filePath = req.url === '/' ? './index.html' : '.' + req.url;
-  const ext = path.extname(filePath);
-  const types = {
+  const filePath = req.url === '/' ? './index.html' : `.${req.url}`;
+  const extname = path.extname(filePath);
+  const contentType = {
     '.html': 'text/html',
     '.js': 'text/javascript',
-    '.css': 'text/css'
-  };
-  const contentType = types[ext] || 'text/plain';
+    '.css': 'text/css',
+  }[extname] || 'text/plain';
 
   fs.readFile(filePath, (err, content) => {
     if (err) {
       res.writeHead(404);
-      res.end('Not found');
+      res.end('404 Not Found');
     } else {
       res.writeHead(200, { 'Content-Type': contentType });
       res.end(content);
@@ -25,60 +24,58 @@ const server = http.createServer((req, res) => {
 });
 
 const wss = new WebSocket.Server({ server });
+
 let waiting = null;
 
-wss.on('connection', (ws) => {
-  ws.partner = null;
-
-  const pair = (a, b) => {
-    a.partner = b;
-    b.partner = a;
-    a.send(JSON.stringify({ type: 'match', initiator: true }));
-    b.send(JSON.stringify({ type: 'match', initiator: false }));
-  };
-
-  if (waiting && waiting.readyState === WebSocket.OPEN) {
-    pair(ws, waiting);
-    waiting = null;
-  } else {
-    waiting = ws;
-    ws.send(JSON.stringify({ type: 'wait' }));
-  }
-
-  ws.on('message', (msg) => {
+wss.on('connection', socket => {
+  socket.on('message', msg => {
     try {
       const data = JSON.parse(msg);
+
+      if (data.offer || data.answer || data.candidate) {
+        socket.partner?.send(msg);
+      }
+
       if (data.type === 'skip' || data.type === 'reconnect') {
-        if (ws.partner && ws.partner.readyState === WebSocket.OPEN) {
-          ws.partner.send(JSON.stringify({ type: 'partner_disconnected' }));
-          ws.partner.partner = null;
+        if (socket.partner) {
+          socket.partner.partner = null;
+          socket.partner.send(JSON.stringify({ type: 'partner_disconnected' }));
         }
-        ws.partner = null;
-        if (waiting && waiting.readyState === WebSocket.OPEN) {
-          pair(ws, waiting);
-          waiting = null;
-        } else {
-          waiting = ws;
-          ws.send(JSON.stringify({ type: 'wait' }));
-        }
-        return;
+        socket.partner = null;
+        match(socket);
       }
-      if (ws.partner && ws.partner.readyState === WebSocket.OPEN) {
-        ws.partner.send(msg);
-      }
-    } catch (e) {}
+    } catch (e) {
+      console.error("Message parsing error:", e);
+    }
   });
 
-  ws.on('close', () => {
-    if (ws.partner && ws.partner.readyState === WebSocket.OPEN) {
-      ws.partner.send(JSON.stringify({ type: 'partner_disconnected' }));
-      ws.partner.partner = null;
+  socket.on('close', () => {
+    if (socket.partner) {
+      socket.partner.partner = null;
+      socket.partner.send(JSON.stringify({ type: 'partner_disconnected' }));
     }
-    if (waiting === ws) {
-      waiting = null;
-    }
+    if (waiting === socket) waiting = null;
   });
+
+  match(socket);
 });
 
+function match(socket) {
+  if (waiting && waiting.readyState === WebSocket.OPEN) {
+    socket.partner = waiting;
+    waiting.partner = socket;
+
+    socket.send(JSON.stringify({ type: 'match', initiator: true }));
+    waiting.send(JSON.stringify({ type: 'match', initiator: false }));
+
+    waiting = null;
+  } else {
+    waiting = socket;
+    socket.send(JSON.stringify({ type: 'wait' }));
+  }
+}
+
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Serveur lancé sur http://0.0.0.0:${PORT}`));
+server.listen(PORT, () => {
+  console.log(`Serveur lancé sur http://0.0.0.0:${PORT}`);
+});

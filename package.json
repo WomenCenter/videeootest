@@ -1,17 +1,11 @@
 {
-  "name": "webrtc-rencontre",
+  "name": "webrtc-app",
   "version": "1.0.0",
-  "description": "Site de rencontre WebRTC (style Omegle)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "ws": "^8.18.3"
-  },
-  "engines": {
-    "node": ">=16"
-  },
-  "author": "",
-  "license": "MIT"
+  }
 }

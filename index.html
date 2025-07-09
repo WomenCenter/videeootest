@@ -24,16 +24,14 @@
       gap: 10px;
     }
 
-    #localVideo, #remoteVideo {
+    video {
       width: 45%;
       max-height: 70vh;
       background: #111;
       border-radius: 10px;
       border: 2px solid #fff;
-    }
-
-    #localVideo {
-      transform: none !important; /* ✅ Pas d'effet miroir */
+      object-fit: cover;
+      transform: none !important; /* ❌ Supprime le miroir */
     }
 
     select, button, input {
@@ -114,16 +112,14 @@
       devices.forEach(device => {
         const option = document.createElement('option');
         option.value = device.deviceId;
-        option.text = device.label || `${device.kind}`;
+        option.text = device.label || device.kind;
         if (device.kind === 'videoinput') videoSelect.appendChild(option);
         if (device.kind === 'audioinput') audioSelect.appendChild(option);
       });
     }
 
     async function startStream() {
-      if (localStream) {
-        localStream.getTracks().forEach(t => t.stop());
-      }
+      if (localStream) localStream.getTracks().forEach(t => t.stop());
 
       const constraints = {
         video: { deviceId: videoSelect.value ? { exact: videoSelect.value } : undefined },
@@ -133,9 +129,7 @@
       localStream = await navigator.mediaDevices.getUserMedia(constraints);
       localVideo.srcObject = localStream;
 
-      if (isInitiator !== null) {
-        initPeer(isInitiator);
-      }
+      if (isInitiator !== null) initPeer(isInitiator);
     }
 
     videoSelect.onchange = startStream;
@@ -159,9 +153,7 @@
         }
       };
 
-      localStream.getTracks().forEach(track => {
-        peer.addTrack(track, localStream);
-      });
+      localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
 
       if (initiator) {
         dataChannel = peer.createDataChannel("chat");
@@ -170,8 +162,8 @@
         await peer.setLocalDescription(offer);
         socket.send(JSON.stringify({ offer }));
       } else {
-        peer.ondatachannel = event => {
-          dataChannel = event.channel;
+        peer.ondatachannel = e => {
+          dataChannel = e.channel;
           setupChat();
         };
       }
@@ -201,16 +193,12 @@
     socket.onmessage = async e => {
       const data = typeof e.data === 'string' ? JSON.parse(e.data) : JSON.parse(await e.data.text());
 
-      if (data.type === "wait") {
-        status.textContent = "En attente d’un partenaire...";
-      }
-
+      if (data.type === "wait") status.textContent = "En attente d’un partenaire...";
       if (data.type === "match") {
         status.textContent = "Connecté à un partenaire.";
         isInitiator = data.initiator;
         if (localStream) initPeer(isInitiator);
       }
-
       if (data.offer) {
         await initPeer(false);
         await peer.setRemoteDescription(new RTCSessionDescription(data.offer));
@@ -218,15 +206,12 @@
         await peer.setLocalDescription(answer);
         socket.send(JSON.stringify({ answer }));
       }
-
       if (data.answer) {
         await peer.setRemoteDescription(new RTCSessionDescription(data.answer));
       }
-
       if (data.candidate) {
         await peer.addIceCandidate(new RTCIceCandidate(data.candidate));
       }
-
       if (data.type === "partner_disconnected") {
         remoteVideo.srcObject = null;
         status.textContent = "Partenaire déconnecté. Recherche...";

@@ -1,94 +1,84 @@
 const http = require('http');
 const fs = require('fs');
-const path = require('path');
 const WebSocket = require('ws');
+const path = require('path');
 
 const server = http.createServer((req, res) => {
-  const file = req.url === '/' ? 'index.html' : req.url;
-  const ext = path.extname(file);
-  const map = {
+  let filePath = req.url === '/' ? './index.html' : '.' + req.url;
+  const ext = path.extname(filePath);
+  const types = {
     '.html': 'text/html',
     '.js': 'text/javascript',
     '.css': 'text/css'
   };
+  const contentType = types[ext] || 'text/plain';
 
-  fs.readFile(path.join(__dirname, file), (err, data) => {
+  fs.readFile(filePath, (err, content) => {
     if (err) {
       res.writeHead(404);
-      return res.end('Not found');
+      res.end('Not found');
+    } else {
+      res.writeHead(200, { 'Content-Type': contentType });
+      res.end(content);
     }
-    res.writeHead(200, { 'Content-Type': map[ext] || 'text/plain' });
-    res.end(data);
   });
 });
 
 const wss = new WebSocket.Server({ server });
 let waiting = null;
-const pairs = new Map();
 
-function pair(ws1, ws2) {
-  pairs.set(ws1, ws2);
-  pairs.set(ws2, ws1);
-  ws1.send(JSON.stringify({ type: "match", initiator: true }));
-  ws2.send(JSON.stringify({ type: "match", initiator: false }));
-}
+wss.on('connection', (ws) => {
+  ws.partner = null;
 
-function disconnect(ws) {
-  const partner = pairs.get(ws);
-  if (partner && partner.readyState === WebSocket.OPEN) {
-    partner.send(JSON.stringify({ type: "partner_disconnected" }));
-    pairs.delete(partner);
-  }
-  pairs.delete(ws);
-  if (waiting === ws) waiting = null;
-}
+  const pair = (a, b) => {
+    a.partner = b;
+    b.partner = a;
+    a.send(JSON.stringify({ type: 'match', initiator: true }));
+    b.send(JSON.stringify({ type: 'match', initiator: false }));
+  };
 
-wss.on('connection', ws => {
-  if (waiting) {
+  if (waiting && waiting.readyState === WebSocket.OPEN) {
     pair(ws, waiting);
     waiting = null;
   } else {
     waiting = ws;
-    ws.send(JSON.stringify({ type: "wait" }));
+    ws.send(JSON.stringify({ type: 'wait' }));
   }
 
-  ws.on('message', message => {
-    let data;
+  ws.on('message', (msg) => {
     try {
-      data = JSON.parse(message);
-    } catch {
-      return;
-    }
-
-    const partner = pairs.get(ws);
-    if (partner && partner.readyState === WebSocket.OPEN) {
-      if (data.type === 'skip') {
-        disconnect(ws);
-        if (waiting) pair(ws, waiting);
-        else {
-          waiting = ws;
-          ws.send(JSON.stringify({ type: "wait" }));
+      const data = JSON.parse(msg);
+      if (data.type === 'skip' || data.type === 'reconnect') {
+        if (ws.partner && ws.partner.readyState === WebSocket.OPEN) {
+          ws.partner.send(JSON.stringify({ type: 'partner_disconnected' }));
+          ws.partner.partner = null;
         }
-      } else if (data.type === 'reconnect') {
-        disconnect(ws);
-        if (waiting) pair(ws, waiting);
-        else {
+        ws.partner = null;
+        if (waiting && waiting.readyState === WebSocket.OPEN) {
+          pair(ws, waiting);
+          waiting = null;
+        } else {
           waiting = ws;
-          ws.send(JSON.stringify({ type: "wait" }));
+          ws.send(JSON.stringify({ type: 'wait' }));
         }
-      } else if (data.type === 'chat') {
-        partner.send(JSON.stringify({ type: 'chat', text: data.text }));
-      } else {
-        partner.send(JSON.stringify(data));
+        return;
       }
-    }
+      if (ws.partner && ws.partner.readyState === WebSocket.OPEN) {
+        ws.partner.send(msg);
+      }
+    } catch (e) {}
   });
 
-  ws.on('close', () => disconnect(ws));
-  ws.on('error', () => disconnect(ws));
+  ws.on('close', () => {
+    if (ws.partner && ws.partner.readyState === WebSocket.OPEN) {
+      ws.partner.send(JSON.stringify({ type: 'partner_disconnected' }));
+      ws.partner.partner = null;
+    }
+    if (waiting === ws) {
+      waiting = null;
+    }
+  });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Serveur lancé sur http://0.0.0.0:${PORT}`);
-});
+server.listen(PORT, () => console.log(`Serveur lancé sur http://0.0.0.0:${PORT}`));

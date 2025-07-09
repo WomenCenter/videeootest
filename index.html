@@ -1,80 +1,90 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Rencontre WebRTC</title>
   <style>
     body {
       margin: 0;
       background: #000;
       color: white;
-      font-family: sans-serif;
-      text-align: center;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
     }
 
-    h2 {
+    #status {
       margin: 1rem;
+      font-size: 1.2rem;
     }
 
     #videos {
       display: flex;
       justify-content: center;
-      align-items: center;
-      height: 60vh;
       gap: 10px;
+      width: 100%;
+      max-height: 60vh;
     }
 
     video {
       width: 45%;
-      max-height: 60vh;
       background: #111;
-      border-radius: 10px;
-      border: 2px solid #fff;
+      border-radius: 8px;
+      border: 2px solid white;
+      object-fit: cover;
     }
 
-    #chat {
-      margin: 1rem auto;
-      width: 80%;
-      max-width: 600px;
-      background: #111;
-      padding: 10px;
-      border-radius: 10px;
-      text-align: left;
-    }
-
-    #messages {
-      max-height: 150px;
-      overflow-y: auto;
-      margin-bottom: 10px;
-    }
-
-    #messages p {
-      margin: 5px 0;
-    }
-
-    #chatInput {
-      width: 100%;
-      padding: 8px;
-      border: none;
-      border-radius: 5px;
-      font-size: 1rem;
+    #controls {
+      margin: 10px;
     }
 
     select, button {
-      margin: 5px;
+      padding: 5px;
+      margin: 0 5px;
+      font-size: 1rem;
+    }
+
+    #chat {
+      width: 90%;
+      max-width: 600px;
+      margin-top: 10px;
+    }
+
+    #messages {
+      background: #222;
+      border: 1px solid #444;
+      height: 150px;
+      overflow-y: auto;
+      padding: 10px;
+      margin-bottom: 5px;
+    }
+
+    #messages p {
+      margin: 3px 0;
+    }
+
+    #chatInput {
+      display: flex;
+    }
+
+    #chatInput input {
+      flex: 1;
       padding: 5px;
       font-size: 1rem;
+    }
+
+    #chatInput button {
+      padding: 5px 10px;
     }
   </style>
 </head>
 <body>
-  <h2 id="status">Connexion...</h2>
+  <div id="status">Connexion...</div>
 
-  <div>
-    <label for="videoSource">Caméra :</label>
-    <select id="videoSource"></select>
-    <label for="audioSource">Micro :</label>
-    <select id="audioSource"></select>
+  <div id="controls">
+    <label>Caméra: <select id="videoSource"></select></label>
+    <label>Micro: <select id="audioSource"></select></label>
     <button id="skip">⏭ Skip</button>
   </div>
 
@@ -83,10 +93,12 @@
     <video id="remoteVideo" autoplay playsinline></video>
   </div>
 
-  <!-- 💬 Zone de chat -->
   <div id="chat">
     <div id="messages"></div>
-    <input type="text" id="chatInput" placeholder="Écris un message et appuie sur Entrée">
+    <div id="chatInput">
+      <input type="text" id="messageBox" placeholder="Écris un message...">
+      <button id="sendBtn">Envoyer</button>
+    </div>
   </div>
 
   <script>
@@ -96,50 +108,65 @@
     const videoSelect = document.getElementById('videoSource');
     const audioSelect = document.getElementById('audioSource');
     const skipBtn = document.getElementById('skip');
-    const chatInput = document.getElementById('chatInput');
-    const messages = document.getElementById('messages');
     const status = document.getElementById('status');
+    const messages = document.getElementById('messages');
+    const messageBox = document.getElementById('messageBox');
+    const sendBtn = document.getElementById('sendBtn');
 
-    let peer;
+    let peer, dataChannel;
     let localStream;
     let isInitiator = null;
 
     skipBtn.onclick = () => {
       if (peer) peer.close();
-      socket.send(JSON.stringify({ type: "skip" }));
       remoteVideo.srcObject = null;
+      socket.send(JSON.stringify({ type: "skip" }));
       status.textContent = "Recherche d’un nouveau partenaire...";
-      messages.innerHTML = "";
     };
 
-    async function getMediaDevices() {
+    sendBtn.onclick = sendMessage;
+    messageBox.onkeydown = (e) => {
+      if (e.key === 'Enter') sendMessage();
+    };
+
+    function sendMessage() {
+      const msg = messageBox.value.trim();
+      if (msg && dataChannel?.readyState === 'open') {
+        dataChannel.send(msg);
+        appendMessage("Toi: " + msg);
+        messageBox.value = '';
+      }
+    }
+
+    function appendMessage(text) {
+      const p = document.createElement('p');
+      p.textContent = text;
+      messages.appendChild(p);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    async function getDevices() {
       const devices = await navigator.mediaDevices.enumerateDevices();
       videoSelect.innerHTML = '';
       audioSelect.innerHTML = '';
-
       devices.forEach(device => {
-        const option = document.createElement('option');
-        option.value = device.deviceId;
-        option.text = device.label || `${device.kind}`;
-        if (device.kind === 'videoinput') videoSelect.appendChild(option);
-        if (device.kind === 'audioinput') audioSelect.appendChild(option);
+        const opt = document.createElement('option');
+        opt.value = device.deviceId;
+        opt.text = device.label || device.kind;
+        if (device.kind === 'videoinput') videoSelect.appendChild(opt);
+        if (device.kind === 'audioinput') audioSelect.appendChild(opt);
       });
     }
 
     async function startStream() {
       if (localStream) localStream.getTracks().forEach(t => t.stop());
-
       const constraints = {
         video: { deviceId: { exact: videoSelect.value } },
         audio: { deviceId: { exact: audioSelect.value } }
       };
-
       localStream = await navigator.mediaDevices.getUserMedia(constraints);
       localVideo.srcObject = localStream;
-
-      if (isInitiator !== null) {
-        initPeer(isInitiator);
-      }
+      if (isInitiator !== null) initPeer(isInitiator);
     }
 
     videoSelect.onchange = startStream;
@@ -162,31 +189,42 @@
         if (peer.connectionState === 'disconnected' || peer.connectionState === 'failed') {
           remoteVideo.srcObject = null;
           socket.send(JSON.stringify({ type: "reconnect" }));
-          messages.innerHTML = "";
         }
       };
 
-      localStream.getTracks().forEach(track => {
-        peer.addTrack(track, localStream);
-      });
+      localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
 
       if (initiator) {
+        dataChannel = peer.createDataChannel("chat");
+        setupDataChannel();
         const offer = await peer.createOffer();
         await peer.setLocalDescription(offer);
         socket.send(JSON.stringify({ offer }));
+      } else {
+        peer.ondatachannel = e => {
+          dataChannel = e.channel;
+          setupDataChannel();
+        };
       }
+    }
+
+    function setupDataChannel() {
+      dataChannel.onmessage = (e) => appendMessage("Partenaire: " + e.data);
     }
 
     socket.onmessage = async e => {
       const data = typeof e.data === 'string' ? JSON.parse(e.data) : JSON.parse(await e.data.text());
 
-      if (data.type === "wait") status.textContent = "En attente d’un partenaire...";
+      if (data.type === "wait") {
+        status.textContent = "En attente d’un partenaire...";
+      }
+
       if (data.type === "match") {
         status.textContent = "Connecté à un partenaire.";
         isInitiator = data.initiator;
-        messages.innerHTML = "";
         if (localStream) initPeer(isInitiator);
       }
+
       if (data.offer) {
         await initPeer(false);
         await peer.setRemoteDescription(new RTCSessionDescription(data.offer));
@@ -194,43 +232,27 @@
         await peer.setLocalDescription(answer);
         socket.send(JSON.stringify({ answer }));
       }
+
       if (data.answer) {
         await peer.setRemoteDescription(new RTCSessionDescription(data.answer));
       }
+
       if (data.candidate) {
         await peer.addIceCandidate(new RTCIceCandidate(data.candidate));
       }
+
       if (data.type === "partner_disconnected") {
         remoteVideo.srcObject = null;
         status.textContent = "Partenaire déconnecté. Recherche...";
         socket.send(JSON.stringify({ type: "reconnect" }));
-        messages.innerHTML = "";
-      }
-      if (data.type === "chat") {
-        const p = document.createElement("p");
-        p.textContent = "👤 " + data.text;
-        messages.appendChild(p);
-        messages.scrollTop = messages.scrollHeight;
       }
     };
 
-    chatInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && chatInput.value.trim() !== "") {
-        const msg = chatInput.value;
-        const p = document.createElement("p");
-        p.textContent = "Moi: " + msg;
-        messages.appendChild(p);
-        messages.scrollTop = messages.scrollHeight;
-        socket.send(JSON.stringify({ type: "chat", text: msg }));
-        chatInput.value = "";
-      }
-    });
-
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(async () => {
-      await getMediaDevices();
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(async stream => {
+      await getDevices();
       videoSelect.selectedIndex = 0;
       audioSelect.selectedIndex = 0;
-      startStream();
+      await startStream();
     });
   </script>
 </body>
